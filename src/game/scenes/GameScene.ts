@@ -1,6 +1,7 @@
-import Phaser from 'phaser';
-import RAPIER from '@dimforge/rapier2d-deterministic';
-import { EventBus, EVENTS } from '../EventBus';
+import Phaser from "phaser";
+import RAPIER from "@dimforge/rapier2d-deterministic";
+import { EventBus, EVENTS } from "../EventBus";
+import { UISettings } from "../UISettings";
 
 // The conversion ratio between Rapier's meters and Phaser's pixels.
 const PIXELS_PER_METER = 100;
@@ -19,9 +20,10 @@ export class GameScene extends Phaser.Scene {
   private gameObjects: PhysicsObject[] = [];
   private readonly MOVEMENT_THRESHOLD: number = 0.1; // 移动阈值（像素）
   private readonly STOP_FRAME_THRESHOLD: number = 10; // 连续静止多少帧后认为完全停止
+  private uiSettings: UISettings = UISettings.getInstance(); // UI设置管理器
 
   constructor() {
-    super('GameScene');
+    super("GameScene");
   }
 
   preload() {
@@ -29,7 +31,7 @@ export class GameScene extends Phaser.Scene {
     const graphics = this.make.graphics({ x: 0, y: 0 });
     graphics.fillStyle(0xff4444, 1);
     graphics.fillRect(0, 0, 100, 100);
-    graphics.generateTexture('box', 100, 100);
+    graphics.generateTexture("box", 100, 100);
     graphics.destroy();
   }
 
@@ -38,7 +40,7 @@ export class GameScene extends Phaser.Scene {
       // Dynamic import of RAPIER
       this.rapierWorld = new RAPIER.World(new RAPIER.Vector2(0.0, 9.81));
 
-      this.cameras.main.setBackgroundColor(0x87CEEB);
+      this.cameras.main.setBackgroundColor(0x87ceeb);
 
       // --- Create Ground ---
       const groundHeight = 50;
@@ -46,27 +48,39 @@ export class GameScene extends Phaser.Scene {
       // We create a Rapier rigid body with a collider for the ground
       const groundRigidBodyDesc = RAPIER.RigidBodyDesc.fixed();
       groundRigidBodyDesc.setTranslation(
-        (this.scale.width / 2) / PIXELS_PER_METER,
+        this.scale.width / 2 / PIXELS_PER_METER,
         (this.scale.height - groundHeight / 2) / PIXELS_PER_METER
       );
 
-      const groundRigidBody = this.rapierWorld.createRigidBody(groundRigidBodyDesc);
+      const groundRigidBody =
+        this.rapierWorld.createRigidBody(groundRigidBodyDesc);
 
-      // We create a ColliderDesc with a cuboid shape 
+      // We create a ColliderDesc with a cuboid shape
       const groundColliderDesc = RAPIER.ColliderDesc.cuboid(
-        (this.scale.width / 2) / PIXELS_PER_METER,
-        (groundHeight / 2) / PIXELS_PER_METER
+        this.scale.width / 2 / PIXELS_PER_METER,
+        groundHeight / 2 / PIXELS_PER_METER
       );
 
       // Finally, we create a collider with the colliderDesc and the rigid body
       this.rapierWorld.createCollider(groundColliderDesc, groundRigidBody);
 
       // Phaser visualization for the ground
-      this.add.rectangle(this.scale.width / 2, this.scale.height - groundHeight / 2, this.scale.width, groundHeight, 0x44ff44);
+      this.add.rectangle(
+        this.scale.width / 2,
+        this.scale.height - groundHeight / 2,
+        this.scale.width,
+        groundHeight,
+        0x44ff44
+      );
 
       // --- Allow creating boxes on click ---
-      this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        this.createDynamicBox(pointer.x, pointer.y);
+      this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+        // 转换屏幕坐标为世界坐标
+        const worldPoint = this.cameras.main.getWorldPoint(
+          pointer.x,
+          pointer.y
+        );
+        this.createDynamicBox(worldPoint.x, worldPoint.y);
       });
 
       // --- Listen to EventBus for spacebar box creation ---
@@ -74,25 +88,38 @@ export class GameScene extends Phaser.Scene {
         this.createDynamicBox(x, y);
       });
 
+      // 监听UI缩放变化事件
+      EventBus.on(EVENTS.UI_SCALE_CHANGED, () => {
+        this.updateGameObjectsUI();
+      });
+
       // Create an initial box
       this.createDynamicBox(this.scale.width / 2, 150);
     } catch (error) {
-      console.error('Failed to initialize RAPIER:', error);
+      console.error("Failed to initialize RAPIER:", error);
       // Fallback to simple physics if RAPIER fails
       this.createFallbackPhysics();
     }
   }
 
   createFallbackPhysics() {
-    this.cameras.main.setBackgroundColor(0x87CEEB);
+    this.cameras.main.setBackgroundColor(0x87ceeb);
 
     // Create a simple ground rectangle
     const groundHeight = 50;
-    this.add.rectangle(this.scale.width / 2, this.scale.height - groundHeight / 2, this.scale.width, groundHeight, 0x44ff44);
+    this.add.rectangle(
+      this.scale.width / 2,
+      this.scale.height - groundHeight / 2,
+      this.scale.width,
+      groundHeight,
+      0x44ff44
+    );
 
     // Allow creating boxes on click
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.createSimpleBox(pointer.x, pointer.y);
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      // 转换屏幕坐标为世界坐标
+      const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.createSimpleBox(worldPoint.x, worldPoint.y);
     });
 
     // Create an initial box
@@ -101,15 +128,19 @@ export class GameScene extends Phaser.Scene {
 
   createSimpleBox(x: number, y: number) {
     const boxSize = 80;
-    const box = this.add.sprite(x, y, 'box');
+    const box = this.add.sprite(x, y, "box");
     box.setDisplaySize(boxSize, boxSize);
 
-    // 创建帧数显示文本
-    const frameText = this.add.text(x, y, '0', {
-      font: '16px Arial',
-      color: '#ffffff',
-      backgroundColor: 'rgba(0,0,0,0.7)',
-      padding: { x: 4, y: 2 }
+    // 创建帧数显示文本（使用游戏内UI缩放）
+    const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
+    const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+
+    const frameText = this.add.text(x, y, "0", {
+      fontSize: `${fontSize}px`,
+      fontFamily: "Arial",
+      color: "#ffffff",
+      backgroundColor: "rgba(0,0,0,0.7)",
+      padding: { x: padding, y: Math.round(padding * 0.5) },
     });
     frameText.setOrigin(0.5);
 
@@ -140,7 +171,7 @@ export class GameScene extends Phaser.Scene {
           if (Math.abs(velocity.y) < 0.5 && Math.abs(velocity.x) < 0.1) {
             isMoving = false;
             console.log(`简单物理方块停止！总共移动了 ${frameCount} 逻辑帧`);
-            frameText.setStyle({ color: '#00ff00' }); // 绿色表示已停止
+            frameText.setStyle({ color: "#00ff00" }); // 绿色表示已停止
           }
         }
 
@@ -157,7 +188,7 @@ export class GameScene extends Phaser.Scene {
     this.time.addEvent({
       delay: 16, // ~60fps
       callback: updateBox,
-      loop: true
+      loop: true,
     });
   }
 
@@ -171,7 +202,7 @@ export class GameScene extends Phaser.Scene {
     const boxSize = 80;
 
     // We create a phaser game object and a Rapier rigid body with a collider
-    const box = this.add.sprite(x, y, 'box');
+    const box = this.add.sprite(x, y, "box");
     box.setDisplaySize(boxSize, boxSize);
 
     // We create a Rapier rigid body with a collider
@@ -186,8 +217,8 @@ export class GameScene extends Phaser.Scene {
 
     // We create a ColliderDesc with a cuboid shape and set the restitution to 0.7
     const colliderDesc = RAPIER.ColliderDesc.cuboid(
-      (boxSize / 2) / PIXELS_PER_METER,
-      (boxSize / 2) / PIXELS_PER_METER
+      boxSize / 2 / PIXELS_PER_METER,
+      boxSize / 2 / PIXELS_PER_METER
     );
 
     colliderDesc.setRestitution(0.7);
@@ -202,22 +233,26 @@ export class GameScene extends Phaser.Scene {
       frameCount: 0,
       isMoving: true,
       lastPosition: { x: x, y: y },
-      stoppedFrameCount: 0
+      stoppedFrameCount: 0,
     };
 
     this.gameObjects.push(physicsObject);
 
-    // 为box添加一个文本显示帧数
-    const frameText = this.add.text(x, y, '0', {
-      font: '16px Arial',
-      color: '#ffffff',
-      backgroundColor: 'rgba(0,0,0,0.7)',
-      padding: { x: 4, y: 2 }
+    // 为box添加一个文本显示帧数（使用游戏内UI缩放）
+    const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
+    const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+
+    const frameText = this.add.text(x, y, "0", {
+      fontSize: `${fontSize}px`,
+      fontFamily: "Arial",
+      color: "#ffffff",
+      backgroundColor: "rgba(0,0,0,0.7)",
+      padding: { x: padding, y: Math.round(padding * 0.5) },
     });
     frameText.setOrigin(0.5); // 居中显示
 
     // 将文本存储在sprite的数据中
-    box.setData('frameText', frameText);
+    box.setData("frameText", frameText);
   }
 
   update() {
@@ -252,12 +287,16 @@ export class GameScene extends Phaser.Scene {
               physicsObj.stoppedFrameCount++;
               if (physicsObj.stoppedFrameCount >= this.STOP_FRAME_THRESHOLD) {
                 physicsObj.isMoving = false;
-                console.log(`物块停止！总共移动了 ${physicsObj.frameCount} 逻辑帧`);
+                console.log(
+                  `物块停止！总共移动了 ${physicsObj.frameCount} 逻辑帧`
+                );
 
                 // 更新文本颜色表示已停止
-                const frameText = gameObject.getData('frameText') as Phaser.GameObjects.Text;
+                const frameText = gameObject.getData(
+                  "frameText"
+                ) as Phaser.GameObjects.Text;
                 if (frameText) {
-                  frameText.setStyle({ color: '#00ff00' }); // 绿色表示已停止
+                  frameText.setStyle({ color: "#00ff00" }); // 绿色表示已停止
                 }
               }
             } else {
@@ -272,7 +311,9 @@ export class GameScene extends Phaser.Scene {
           physicsObj.lastPosition.y = newY;
 
           // 更新帧数显示
-          const frameText = gameObject.getData('frameText') as Phaser.GameObjects.Text;
+          const frameText = gameObject.getData(
+            "frameText"
+          ) as Phaser.GameObjects.Text;
           if (frameText) {
             frameText.setText(physicsObj.frameCount.toString());
             frameText.x = gameObject.x;
@@ -283,8 +324,31 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // 更新所有游戏对象的UI元素以响应UI缩放变化
+  updateGameObjectsUI() {
+    this.gameObjects.forEach((physicsObj) => {
+      const frameText = physicsObj.phaserObj.getData(
+        "frameText"
+      ) as Phaser.GameObjects.Text;
+      if (frameText) {
+        // 使用游戏内UI缩放来补偿渲染缩放的影响
+        const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
+        const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+
+        frameText.setStyle({
+          fontSize: `${fontSize}px`,
+          fontFamily: "Arial",
+          color: frameText.style.color, // 保持当前颜色
+          backgroundColor: "rgba(0,0,0,0.7)",
+          padding: { x: padding, y: Math.round(padding * 0.5) },
+        });
+      }
+    });
+  }
+
   destroy() {
     // 清理 EventBus 监听器
     EventBus.off(EVENTS.CREATE_BOX_AT_MOUSE);
+    EventBus.off(EVENTS.UI_SCALE_CHANGED);
   }
 }
