@@ -1,12 +1,7 @@
-// UI设置管理器 - 单例模式，在GameScene和UIScene之间共享
+// UI设置管理器 - 参考Phaser官方示例的缩放管理方式
 export class UISettings {
   private static instance: UISettings;
-  public renderScale: number = 1.0; // 渲染分辨率缩放
   public userUIScale: number = 1.0; // 用户独立调节的UI缩放
-  public currentResolution: { width: number; height: number } = {
-    width: 1920,
-    height: 1080,
-  };
 
   static getInstance(): UISettings {
     if (!UISettings.instance) {
@@ -15,42 +10,23 @@ export class UISettings {
     return UISettings.instance;
   }
 
-  setRenderScale(scale: number) {
-    this.renderScale = scale;
-  }
-
   setUserUIScale(scale: number) {
     this.userUIScale = scale;
   }
 
-  setResolution(width: number, height: number) {
-    this.currentResolution = { width, height };
-  }
-
-  // 获取UI界面元素的缩放（保持清晰，不受渲染分辨率影响）
-  getUIScale(): number {
-    return this.userUIScale;
-  }
-
-  // 获取游戏内UI元素的缩放（考虑渲染缩放以保持相对大小）
-  getGameUIScale(): number {
-    // 游戏内UI元素需要补偿渲染缩放的影响
-    return this.userUIScale / this.renderScale;
-  }
-
-  // 获取基于UI缩放的字体大小
+  // 获取UI缩放的字体大小
   getScaledFontSize(baseSize: number): number {
-    return Math.round(baseSize * this.getUIScale());
+    return Math.round(baseSize * this.userUIScale);
   }
 
-  // 获取基于UI缩放的间距
+  // 获取UI缩放的间距
   getScaledSpacing(baseSpacing: number): number {
-    return Math.round(baseSpacing * this.getUIScale());
+    return Math.round(baseSpacing * this.userUIScale);
   }
 
-  // 获取基于UI缩放的尺寸
+  // 获取UI缩放的尺寸
   getScaledSize(baseSize: number): number {
-    return Math.round(baseSize * this.getUIScale());
+    return Math.round(baseSize * this.userUIScale);
   }
 }
 
@@ -60,11 +36,4 @@ export const uiScaleOptions = [
   { name: "正常", scale: 1.0 },
   { name: "大", scale: 1.2 },
   { name: "特大", scale: 1.5 },
-];
-
-// 渲染分辨率选项配置
-export const resolutions = [
-  { name: "1080p", width: 1920, height: 1080 },
-  { name: "720p", width: 1280, height: 720 },
-  { name: "540p", width: 960, height: 540 },
 ];

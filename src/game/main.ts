@@ -1,7 +1,7 @@
-import Phaser from 'phaser';
-import { PreloaderScene } from './scenes/PreloaderScene';
-import { GameScene } from './scenes/GameScene';
-import { UIScene } from './scenes/UIScene';
+import Phaser from "phaser";
+import { PreloaderScene } from "./scenes/PreloaderScene";
+import { GameScene } from "./scenes/GameScene";
+import { UIScene } from "./scenes/UIScene";
 
 // Base logical resolution. All game logic is built for this size.
 const LOGICAL_WIDTH = 1920;
@@ -10,7 +10,7 @@ const LOGICAL_HEIGHT = 1080;
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   // The parent div in index.html
-  parent: 'game-container',
+  parent: "game-container",
   // Set the game's logical size.
   width: LOGICAL_WIDTH,
   height: LOGICAL_HEIGHT,
@@ -18,11 +18,18 @@ const config: Phaser.Types.Core.GameConfig = {
   physics: {},
   // Configure the Scale Manager
   scale: {
-    // This is the key: FIT mode maintains the aspect ratio (16:9)
-    // and scales the canvas to fit the parent container.
-    mode: Phaser.Scale.FIT,
+    // 使用RESIZE模式以支持动态分辨率调整
+    mode: Phaser.Scale.RESIZE,
     // Center the canvas horizontally and vertically within the parent.
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    min: {
+      width: 640,
+      height: 360,
+    },
+    max: {
+      width: 2560,
+      height: 1440,
+    },
   },
   // List of all scenes in the game
   scene: [PreloaderScene, GameScene, UIScene],

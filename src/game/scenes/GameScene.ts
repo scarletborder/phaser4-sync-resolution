@@ -16,11 +16,20 @@ interface PhysicsObject {
 }
 
 export class GameScene extends Phaser.Scene {
+  // 固定的游戏逻辑尺寸
+  private readonly GAME_WIDTH = 1920;
+  private readonly GAME_HEIGHT = 1080;
+
   private rapierWorld: any;
   private gameObjects: PhysicsObject[] = [];
   private readonly MOVEMENT_THRESHOLD: number = 0.1; // 移动阈值（像素）
   private readonly STOP_FRAME_THRESHOLD: number = 10; // 连续静止多少帧后认为完全停止
   private uiSettings: UISettings = UISettings.getInstance(); // UI设置管理器
+
+  // 缩放管理器
+  private parent: Phaser.Structs.Size | null = null;
+  private sizer: Phaser.Structs.Size | null = null;
+  private uiScene: Phaser.Scene | null = null;
 
   constructor() {
     super("GameScene");
@@ -37,6 +46,27 @@ export class GameScene extends Phaser.Scene {
 
   async create() {
     try {
+      // 设置缩放管理器
+      const width = this.scale.gameSize.width;
+      const height = this.scale.gameSize.height;
+
+      this.parent = new Phaser.Structs.Size(width, height);
+      this.sizer = new Phaser.Structs.Size(
+        this.GAME_WIDTH,
+        this.GAME_HEIGHT,
+        Phaser.Structs.Size.FIT,
+        this.parent
+      );
+
+      this.parent.setSize(width, height);
+      this.sizer.setSize(width, height);
+
+      this.uiScene = this.scene.get("UIScene");
+      this.updateCamera();
+
+      // 监听resize事件
+      this.scale.on("resize", this.resize, this);
+
       // Dynamic import of RAPIER
       this.rapierWorld = new RAPIER.World(new RAPIER.Vector2(0.0, 9.81));
 
@@ -48,8 +78,8 @@ export class GameScene extends Phaser.Scene {
       // We create a Rapier rigid body with a collider for the ground
       const groundRigidBodyDesc = RAPIER.RigidBodyDesc.fixed();
       groundRigidBodyDesc.setTranslation(
-        this.scale.width / 2 / PIXELS_PER_METER,
-        (this.scale.height - groundHeight / 2) / PIXELS_PER_METER
+        this.GAME_WIDTH / 2 / PIXELS_PER_METER,
+        (this.GAME_HEIGHT - groundHeight / 2) / PIXELS_PER_METER
       );
 
       const groundRigidBody =
@@ -57,7 +87,7 @@ export class GameScene extends Phaser.Scene {
 
       // We create a ColliderDesc with a cuboid shape
       const groundColliderDesc = RAPIER.ColliderDesc.cuboid(
-        this.scale.width / 2 / PIXELS_PER_METER,
+        this.GAME_WIDTH / 2 / PIXELS_PER_METER,
         groundHeight / 2 / PIXELS_PER_METER
       );
 
@@ -66,16 +96,16 @@ export class GameScene extends Phaser.Scene {
 
       // Phaser visualization for the ground
       this.add.rectangle(
-        this.scale.width / 2,
-        this.scale.height - groundHeight / 2,
-        this.scale.width,
+        this.GAME_WIDTH / 2,
+        this.GAME_HEIGHT - groundHeight / 2,
+        this.GAME_WIDTH,
         groundHeight,
         0x44ff44
       );
 
       // --- Allow creating boxes on click ---
       this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-        // 转换屏幕坐标为世界坐标
+        // 转换屏幕坐标为游戏世界坐标
         const worldPoint = this.cameras.main.getWorldPoint(
           pointer.x,
           pointer.y
@@ -94,7 +124,7 @@ export class GameScene extends Phaser.Scene {
       });
 
       // Create an initial box
-      this.createDynamicBox(this.scale.width / 2, 150);
+      this.createDynamicBox(this.GAME_WIDTH / 2, 150);
     } catch (error) {
       console.error("Failed to initialize RAPIER:", error);
       // Fallback to simple physics if RAPIER fails
@@ -108,9 +138,9 @@ export class GameScene extends Phaser.Scene {
     // Create a simple ground rectangle
     const groundHeight = 50;
     this.add.rectangle(
-      this.scale.width / 2,
-      this.scale.height - groundHeight / 2,
-      this.scale.width,
+      this.GAME_WIDTH / 2,
+      this.GAME_HEIGHT - groundHeight / 2,
+      this.GAME_WIDTH,
       groundHeight,
       0x44ff44
     );
@@ -123,7 +153,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Create an initial box
-    this.createSimpleBox(this.scale.width / 2, 150);
+    this.createSimpleBox(this.GAME_WIDTH / 2, 150);
   }
 
   createSimpleBox(x: number, y: number) {
@@ -131,9 +161,9 @@ export class GameScene extends Phaser.Scene {
     const box = this.add.sprite(x, y, "box");
     box.setDisplaySize(boxSize, boxSize);
 
-    // 创建帧数显示文本（使用游戏内UI缩放）
-    const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
-    const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+    // 创建帧数显示文本（使用UI缩放）
+    const fontSize = this.uiSettings.getScaledFontSize(16);
+    const padding = this.uiSettings.getScaledSpacing(4);
 
     const frameText = this.add.text(x, y, "0", {
       fontSize: `${fontSize}px`,
@@ -149,7 +179,7 @@ export class GameScene extends Phaser.Scene {
     let isMoving = true;
     let velocity = { x: 0, y: 0 };
     const gravity = 0.5;
-    const groundY = this.scale.height - 75; // Ground level
+    const groundY = this.GAME_HEIGHT - 75; // Ground level
     const bounce = 0.7;
 
     const updateBox = () => {
@@ -238,9 +268,9 @@ export class GameScene extends Phaser.Scene {
 
     this.gameObjects.push(physicsObject);
 
-    // 为box添加一个文本显示帧数（使用游戏内UI缩放）
-    const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
-    const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+    // 为box添加一个文本显示帧数（使用UI缩放）
+    const fontSize = this.uiSettings.getScaledFontSize(16);
+    const padding = this.uiSettings.getScaledSpacing(4);
 
     const frameText = this.add.text(x, y, "0", {
       fontSize: `${fontSize}px`,
@@ -324,6 +354,42 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // 参考示例的缩放管理方式
+  resize(gameSize: any) {
+    const width = gameSize.width;
+    const height = gameSize.height;
+
+    if (this.parent && this.sizer) {
+      this.parent.setSize(width, height);
+      this.sizer.setSize(width, height);
+      this.updateCamera();
+    }
+  }
+
+  updateCamera() {
+    if (!this.parent || !this.sizer) return;
+
+    const camera = this.cameras.main;
+
+    const x = Math.ceil((this.parent.width - this.sizer.width) * 0.5);
+    const y = 0;
+    const scaleX = this.sizer.width / this.GAME_WIDTH;
+    const scaleY = this.sizer.height / this.GAME_HEIGHT;
+
+    camera.setViewport(x, y, this.sizer.width, this.sizer.height);
+    camera.setZoom(Math.max(scaleX, scaleY));
+    camera.centerOn(this.GAME_WIDTH / 2, this.GAME_HEIGHT / 2);
+
+    // 通知UI场景更新摄像头
+    if (this.uiScene && (this.uiScene as any).updateCamera) {
+      (this.uiScene as any).updateCamera();
+    }
+  }
+
+  getZoom(): number {
+    return this.cameras.main.zoom;
+  }
+
   // 更新所有游戏对象的UI元素以响应UI缩放变化
   updateGameObjectsUI() {
     this.gameObjects.forEach((physicsObj) => {
@@ -331,9 +397,9 @@ export class GameScene extends Phaser.Scene {
         "frameText"
       ) as Phaser.GameObjects.Text;
       if (frameText) {
-        // 使用游戏内UI缩放来补偿渲染缩放的影响
-        const fontSize = Math.round(16 * this.uiSettings.getGameUIScale());
-        const padding = Math.round(4 * this.uiSettings.getGameUIScale());
+        // 重新设置字体大小以保证清晰度
+        const fontSize = this.uiSettings.getScaledFontSize(16);
+        const padding = this.uiSettings.getScaledSpacing(4);
 
         frameText.setStyle({
           fontSize: `${fontSize}px`,
